@@ -14,24 +14,8 @@
 
 namespace Osi2 {
 
-template<class Managed>
-void ParamBEAPI_Imp<Managed>::addAPIID (const char *apiID, void *obj)
-{
-  if (apiIDCnt_+1 > apiIDLen_) {
-    const char **tmp = new const char*[apiIDLen_+5] ;
-    for (int ndx = 0 ; ndx < apiIDCnt_ ; ndx++) { tmp[ndx] = apiIDs_[ndx] ; }
-    delete[] apiIDs_ ;
-    apiIDs_ = tmp ;
-  }
-  apiIDs_[apiIDCnt_++] = apiID ;
-  objForAPI_[apiID] = obj ;
-
-  return ;
-}
-
-
-template<class Managed>
-void ParamBEAPI_Imp<Managed>::addParam (const char *paramID,
+template<class Client>
+void ParamBEAPI_Imp<Client>::addParam (const char *paramID,
 				        ParamEntry *entry)
 {
   if (paramIDCnt_+1 > paramIDLen_) {
@@ -50,17 +34,15 @@ void ParamBEAPI_Imp<Managed>::addParam (const char *paramID,
 
 
 /*
-  It looks like the way to go here is a templated class, so that we can cast
-  the object to the correct class and use a pointer to member function.
+  Ask ParamEntry to invoke the appropriate get function. We already know the
+  client's class. ParamEntry knows the parameter's type. 
 */
-template<class Managed>
-bool ParamBEAPI_Imp<Managed>::get (const char *paramID, void *&blob)
+template<class Client>
+bool ParamBEAPI_Imp<Client>::get (const char *paramID, void *&blob)
 {
   std::cout << "  Request to get parameter " << paramID << std::endl ;
-  void *voidObj = getAPIPtr(Managed::getAPIIDString()) ;
   ParamEntry *paramEntry = entryForParam_[paramID] ;
-  Managed *obj = reinterpret_cast<Managed *>(voidObj) ;
-  paramEntry->get(obj,blob) ;
+  paramEntry->get(client_,blob) ;
   return (true) ;
 }
 
@@ -68,14 +50,12 @@ bool ParamBEAPI_Imp<Managed>::get (const char *paramID, void *&blob)
 /*
   And a matching set method.
 */
-template<class Managed>
-bool ParamBEAPI_Imp<Managed>::set (const char *paramID, const void *&blob)
+template<class Client>
+bool ParamBEAPI_Imp<Client>::set (const char *paramID, const void *&blob)
 {
   std::cout << "  Request to set parameter " << paramID << std::endl ;
-  void *voidObj = getAPIPtr(Managed::getAPIIDString()) ;
   ParamEntry *paramEntry = entryForParam_[paramID] ;
-  Managed *obj = reinterpret_cast<Managed *>(voidObj) ;
-  paramEntry->set(obj,blob) ;
+  paramEntry->set(client_,blob) ;
   return (true) ;
 }
 
@@ -84,13 +64,11 @@ bool ParamBEAPI_Imp<Managed>::set (const char *paramID, const void *&blob)
 */
 
 /*
-  Default constructor
+  Constructor. There's no default here; we need a client.
 */
-template<class Managed>
-ParamBEAPI_Imp<Managed>::ParamBEAPI_Imp ()
-  : apiIDCnt_(0),
-    apiIDLen_(0),
-    apiIDs_(nullptr),
+template<class Client>
+ParamBEAPI_Imp<Client>::ParamBEAPI_Imp (Client *client)
+  : client_(client),
     paramIDCnt_(0),
     paramIDLen_(0),
     paramIDs_(nullptr),
@@ -105,21 +83,13 @@ ParamBEAPI_Imp<Managed>::ParamBEAPI_Imp ()
 /*
   Copy constructor
 */
-template<class Managed>
-ParamBEAPI_Imp<Managed>::ParamBEAPI_Imp (const ParamBEAPI_Imp &rhs)
-  : dfltHandler_(rhs.dfltHandler_),
+template<class Client>
+ParamBEAPI_Imp<Client>::ParamBEAPI_Imp (const ParamBEAPI_Imp &rhs)
+  : client_(rhs.client_),
+    apiMgr_(rhs.apiMgr_),
+    dfltHandler_(rhs.dfltHandler_),
     logLvl_(rhs.logLvl_)
 {
-/*
-  If we're holding an API ID vector, we need to replicate that.
-*/
-  apiIDCnt_ = rhs.apiIDCnt_ ;
-  apiIDLen_ = rhs.apiIDLen_ ;
-  apiIDs_ = new const char*[apiIDLen_] ;
-  for (int ndx = 0 ; ndx < apiIDCnt_ ; ndx++) {
-    apiIDs_[ndx] = rhs.apiIDs_[ndx] ;
-  }
-  objForAPI_ = rhs.objForAPI_ ;
 /*
   Similarly for the param ID vector.
 */
@@ -154,8 +124,8 @@ ParamBEAPI_Imp<Managed>::ParamBEAPI_Imp (const ParamBEAPI_Imp &rhs)
 /*
   Assignment
 */
-template<class Managed>
-ParamBEAPI_Imp<Managed> &ParamBEAPI_Imp<Managed>::operator=
+template<class Client>
+ParamBEAPI_Imp<Client> &ParamBEAPI_Imp<Client>::operator=
     (const ParamBEAPI_Imp &rhs)
 {
 /*
@@ -163,16 +133,10 @@ ParamBEAPI_Imp<Managed> &ParamBEAPI_Imp<Managed>::operator=
 */
   if (this == &rhs) return (*this) ;
 /*
-  If we're holding an API ID vector, we need to replicate that. The
-  objForAPI_ map holds std::strings, so we can just do a direct assignment.
+  Don't lose the client, or the APIs.
 */
-  apiIDCnt_ = rhs.apiIDCnt_ ;
-  apiIDLen_ = rhs.apiIDLen_ ;
-  apiIDs_ = new const char*[apiIDLen_] ;
-  for (int ndx = 0 ; ndx < apiIDCnt_ ; ndx++) {
-    apiIDs_[ndx] = rhs.apiIDs_[ndx] ;
-  }
-  objForAPI_ = rhs.objForAPI_ ;
+  client_ = rhs.client_ ;
+  apiMgr_ = rhs.apiMgr_ ;
 /*
   Similarly for the param ID vector. The entryForParm_ map is a different
   story. It holds pointers to ParamEntry objects that we need to replicate.
@@ -215,14 +179,13 @@ ParamBEAPI_Imp<Managed> &ParamBEAPI_Imp<Managed>::operator=
 /*
   Destructor
 */
-template<class Managed>
-ParamBEAPI_Imp<Managed>::~ParamBEAPI_Imp ()
+template<class Client>
+ParamBEAPI_Imp<Client>::~ParamBEAPI_Imp ()
 {
 /*
-  If we're holding an API ID vector, delete it. We're not responsible for the
-  character strings it points to, just the vector. Simiarly for the param IDs.
+  If we're holding a param ID vector, delete it. We're not responsible for the
+  character strings it points to, just the vector.
 */
-  if (apiIDs_) { delete[] apiIDs_ ; }
   if (paramIDs_) { delete[] paramIDs_ ; }
 /*
   We are responsible for the ParamEntry objects held in entryForParam_
@@ -247,18 +210,18 @@ ParamBEAPI_Imp<Managed>::~ParamBEAPI_Imp ()
 /*
   Virtual constructor
 */
-template<class Managed>
-ParamBEAPI *ParamBEAPI_Imp<Managed>::create ()
+template<class Client>
+ParamBEAPI *ParamBEAPI_Imp<Client>::create (Client *client)
 {
-  ParamBEAPI *api = new ParamBEAPI_Imp() ;
+  ParamBEAPI *api = new ParamBEAPI_Imp(client) ;
   return (api) ;
 }
 
 /*
   Clone
 */
-template<class Managed>
-ParamBEAPI *ParamBEAPI_Imp<Managed>::clone ()
+template<class Client>
+ParamBEAPI *ParamBEAPI_Imp<Client>::clone ()
 {
     ParamBEAPI *api = new ParamBEAPI_Imp(*this) ;
     return (api) ;

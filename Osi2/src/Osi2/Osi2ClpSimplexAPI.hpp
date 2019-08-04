@@ -12,7 +12,7 @@ namespace Osi2 {
   This %API exposes the portion of the ClpSimplex class provided by the Clp
   `C' interface.
 */
-class ClpSimplexAPI {
+class ClpSimplexAPI : public API {
 
 public:
 
@@ -207,11 +207,6 @@ public:
 
   /*! \name Parameter Gets & Sets */
   //@{
-  /// Number of rows
-  int numberRows() const ;
-  /// Number of columns
-  int numberColumns() const ;
-
   /// Primal zero tolerance
   double primalTolerance() const ;
   void setPrimalTolerance(double value) ;

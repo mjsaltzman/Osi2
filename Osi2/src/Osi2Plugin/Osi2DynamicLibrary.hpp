@@ -20,9 +20,12 @@ namespace Osi2 {
 
 /*! \brief A class to manage dynamic library load and unload.
 
-  A call to the static method #load will load a library and return
-  a DynamicLibrary object. The #getSymbol method can then be used to
-  load individual methods from the library.
+  A call to the static method #load will load a library and return a
+  DynamicLibrary object. The #getSymbol method can then be used to load
+  individual methods from the library. Unloading the library is handled by
+  the destructor for the DynamicLibrary object.
+
+  At present, this library supports only dlopen / dlsym / dlclose (dlfcn.h).
 
   \todo Restore/check Windows functionality.
 
@@ -42,32 +45,59 @@ class DynamicLibrary {
 
 public:
 
-    /*! \name Library Management
-        \brief Library management methods
-    */
+/*! \name Library Management
+    \brief Library management methods
+
+    Utilities to load a library. Unloading the library is handled via the
+    destructor for the DynamicLibrary object.
+*/
 //@{
 
-    /*! \brief Load a plugin
+  /*! \brief Load a plugin
 
-      This method will load the plugin specified in \p path. If successful, it
-      will return a pointer to a DynamicLibrary object for the plugin. If
-      unsuccessful, it will return null and \p errStr will be loaded with an
-      error message.
-    */
-    static DynamicLibrary *load(const std::string &path, std::string &errStr) ;
+    This method will load the plugin specified in \p path. If successful,
+    it will return a pointer to a DynamicLibrary object for the plugin. If
+    unsuccessful, it will return nullptr and \p errStr will be loaded
+    with an error message.
+  */
+  static DynamicLibrary *load(const std::string &path, std::string &errStr) ;
 //@}
 
-    /*! \name Symbol Management
-        \brief Symbol management methods
-    */
+  /*! \name Symbol Management
+      \brief Symbol management methods
+  */
 //@{
-    /* \brief Load a symbol
+  /*! \brief Load a symbol with type conversion
 
-      Load the specified symbol. The return value must be cast to the appropriate
-      type for use. If unsuccessful, it will return null and \p errStr will be
-      loaded with an error message.
-    */
-    void *getSymbol(const std::string &name, std::string &errStr) ;
+    Load the specified symbol with appropriate type, using templating to
+    avoid an explicit cast.  If unsuccessful, it will return nullptr and
+    \p errStr will be loaded with an error message.
+  */
+  template<class T>
+  T getSymbol(const std::string &name, std::string &errStr) ;
+
+  /* \brief Load a symbol
+
+    Load the specified symbol. The return value must be cast to the
+    appropriate type for use. If unsuccessful, it will return nullptr and
+    \p errStr will be loaded with an error message.
+
+    Mainly here to avoid breaking existing code. May go away at some point.
+    --lh, 190804 --
+  */
+  inline void *getSymbol(const std::string &name, std::string &errStr)
+  { return (getSymbol<void *>(name,errStr)) ; }
+
+  /*! \brief Load a function symbol
+
+    Converting a void* (object) to a pointer to function requires beating
+    C++ about the head with a 2x4. This method hides that ugliness. If
+    unsuccessful, it will return nullptr and \p errStr will be loaded with
+    an error message.
+   */
+  template<class FuncSig>
+  FuncSig getFunc(const std::string &name, std::string &errStr) ;
+
 //@}
 
     /*! \name Miscellaneous
@@ -128,6 +158,69 @@ private:
     /// Default plugin directory
     std::string dfltPluginDir_ ;
 } ;
+
+}  // end namespace Osi2
+
+/*
+  The body for the templated methods has to be around at the point of
+  instantiation.
+*/
+
+#include <iostream>
+#include <dlfcn.h>
+
+namespace Osi2 {
+
+template<class T>
+T DynamicLibrary::getSymbol (const std::string &symbol,
+			     std::string &errorString)
+{
+  if (handle_ == nullptr) return (nullptr) ;
+
+  void *sym = ::dlsym(handle_,symbol.c_str()) ;
+  if (sym == nullptr) {
+      errorString += "Failed to load symbol \"" + symbol + '"' ;
+      const char *zErrorString = ::dlerror() ;
+      if (zErrorString)
+	  errorString = errorString + ": " + zErrorString ;
+  }
+  return (static_cast<T>(sym)) ;
+}
+
+/*
+  FuncType func =
+    reinterpret_cast<FuncType>(lib->getSymbol(funcName,errStr)) ;
+
+  The code above is what should really happen here. But up through C++11,
+  ISO C++ required a warning for conversion of pointer-to-object to
+  pointer-to-function. There are systems out there that may not support
+  this conversion.  POSIX compatible systems must support conversion of
+  pointer-to-object to pointer-to-function, otherwise dlsym (which returns
+  a void*) simply won't work.
+
+  C++ guarantees we can cast pointer-to-anything to size_t and get it back
+  (with the possible exception of systems with segmented address space).
+  So we slip through a blind spot in the compiler's algorithm for generating
+  warnings.
+*/
+template <class FuncSig>
+FuncSig DynamicLibrary::getFunc (const std::string &name,
+				 std::string &errStr)
+{
+  std::cout << "invoking getSymbol for " << name << std::endl ;
+  size_t grossHack = 
+      reinterpret_cast<size_t>(getSymbol(name,errStr)) ;
+  std::cout
+    << "back from getSymbol, result "
+    << std::hex << grossHack << std::dec
+    << std::endl ;
+  FuncSig func = reinterpret_cast<FuncSig>(grossHack) ;
+  if (func == nullptr) {
+    std::cout << "Apparent failure to find " << name << "." << std::endl ;
+    std::cout << errStr << std::endl ;
+  }
+  return (func) ;
+}
 
 }  // end namespace Osi2
 

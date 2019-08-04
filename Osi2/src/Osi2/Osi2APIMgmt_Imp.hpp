@@ -40,6 +40,32 @@ public:
       apiIDLen_(0),
       apiIDs_(nullptr)
   { }
+  /// Copy constructor
+  APIMgmt_Imp (const APIMgmt_Imp &rhs)
+  {
+    apiIDCnt_ = rhs.apiIDCnt_ ;
+    apiIDLen_ = rhs.apiIDLen_ ;
+    apiIDs_ = new const char*[apiIDLen_] ;
+    for (int ndx = 0 ; ndx < apiIDCnt_ ; ndx++) {
+      apiIDs_[ndx] = rhs.apiIDs_[ndx] ;
+    }
+    objForAPI_ = rhs.objForAPI_ ;
+  }
+  /// Assignment
+  APIMgmt_Imp &operator= (const APIMgmt_Imp &rhs)
+  {
+    /// Self-assignment requires no work.
+    if (this == &rhs) return (*this) ;
+    /// Otherwise, do the work
+    apiIDCnt_ = rhs.apiIDCnt_ ;
+    apiIDLen_ = rhs.apiIDLen_ ;
+    apiIDs_ = new const char*[apiIDLen_] ;
+    for (int ndx = 0 ; ndx < apiIDCnt_ ; ndx++) {
+      apiIDs_[ndx] = rhs.apiIDs_[ndx] ;
+    }
+    objForAPI_ = rhs.objForAPI_ ;
+    return (*this) ;
+  }
   /// Destructor
   ~APIMgmt_Imp ()
   { delete[] apiIDs_ ; }

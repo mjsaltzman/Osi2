@@ -28,70 +28,60 @@
 
 #include "Osi2DynamicLibrary.hpp"
 
-namespace {
-
-template <typename FuncType>
-FuncType loadFunc (Osi2::DynamicLibrary *lib, const std::string funcName)
-{
-  std::string errStr ;
-  /*
-  FuncType func =
-      reinterpret_cast<FuncType>(lib->getSymbol(funcName,errStr)) ;
-
-  The code above is what should really happen. But ISO C++ forbids the
-  conversion of a pointer-to-object to a pointer-to-function and there's no
-  obvious way to suppress the warning with a compiler flag. On the other
-  hand, we are allowed to cast pointer-to-anything to size_t and get it back.
-  So we slip through a blind spot in the compiler's algorithm for generating
-  warnings.
-  */
-  size_t grossHack = 
-      reinterpret_cast<size_t>(lib->getSymbol(funcName,errStr)) ;
-  FuncType func = reinterpret_cast<FuncType>(grossHack) ;
-  if (func == nullptr) {
-    std::cout << "Apparent failure to find " << funcName << "." << std::endl ;
-    std::cout << errStr << std::endl ;
-  }
-  return (func) ;
-}
-
-}   // end unnamed file-local namespace
 
 namespace Osi2 {
 
 /*
-  Capture a pointer to the underlying ClpSimplex object.
+  Constructor
 */
 ClpSimplexAPI_ClpLite::ClpSimplexAPI_ClpLite (DynamicLibrary *libClp)
-    : libClp_(libClp),
+    : paramMgr_(ParamBEAPI_Imp<ClpSimplexAPI_ClpLite>(this)),
+      libClp_(libClp),
       clpC_(nullptr)
 {
+  std::string errStr ;
 /*
   Look up Clp_newModel, coerce it into a suitable type, and invoke it to get a
   new Clp_Simplex object.
 */
   typedef Clp_Simplex *(*ClpFactory)() ;
   ClpFactory factory =
-      loadFunc<ClpFactory>(libClp,std::string("Clp_newModel")) ;
+      libClp_->getFunc<ClpFactory>(std::string("Clp_newModel"),errStr) ;
   if (factory != nullptr) {
     clpC_ = factory() ;
   }
+/*
+  Register that we are a ClpSimplex API and that we support parameter
+  management.
+*/
+  paramMgr_.addAPIID(ClpSimplexAPI::getAPIIDString(),this) ;
+  paramMgr_.addAPIID(ParamBEAPI::getAPIIDString(),&paramMgr_) ;
+/*
+  Register the parameters exposed through parameter management
+*/
+  typedef ParamBEAPI_Imp<ClpSimplexAPI_ClpLite>::ParamEntry_Imp<double> DPE ;
+  ParamBEAPI_Imp<ClpSimplexAPI_ClpLite>::ParamEntry *paramEntry ;
+  paramEntry = new DPE("primal tolerance",
+  		       &ClpSimplexAPI_ClpLite::primalTolerance,
+  		       &ClpSimplexAPI_ClpLite::setPrimalTolerance) ;
+  paramMgr_.addParam("primal tolerance",paramEntry) ;
   return ;
 }
 
 ClpSimplexAPI_ClpLite::~ClpSimplexAPI_ClpLite ()
 {
+  std::string errStr ;
 /*
   Look up Clp_deleteModel, coerce it into a suitable type, and invoke it to
   destroy the Clp_Simplex object.
 */
   typedef void (*ClpDeleteModelFunc)(Clp_Simplex *clp) ;
   ClpDeleteModelFunc deleteModel =
-     loadFunc<ClpDeleteModelFunc>(libClp_,"Clp_deleteModel") ;
+     libClp_->getFunc<ClpDeleteModelFunc>("Clp_deleteModel",errStr) ;
   if (deleteModel != nullptr) {
     deleteModel(clpC_) ;
     clpC_ = nullptr ;
-    std::cout << "Osi1API_ClpLite object destroyed." << std::endl ;
+    std::cout << "ClpSimplexAPI_ClpLite object destroyed." << std::endl ;
   }
 }
 
@@ -101,11 +91,13 @@ ClpSimplexAPI_ClpLite::~ClpSimplexAPI_ClpLite ()
 int ClpSimplexAPI_ClpLite::readMps (const char *filename, bool keepNames,
                               bool ignoreErrors)
 {
+  std::string errStr ;
+
   typedef int (*ClpReadMpsFunc)(Clp_Simplex *,const char *,int,int) ;
   static ClpReadMpsFunc readMps = nullptr ;
 
   if (readMps == nullptr) {
-    readMps = loadFunc<ClpReadMpsFunc>(libClp_,"Clp_readMps") ;
+    readMps = libClp_->getFunc<ClpReadMpsFunc>("Clp_readMps",errStr) ;
   }
   int retval = -1 ;
   if (readMps != nullptr) {
@@ -123,16 +115,51 @@ int ClpSimplexAPI_ClpLite::readMps (const char *filename, bool keepNames,
 }
 
 /*
+  typedefs for typical get/set methods
+*/
+typedef double (*getDblFunc)(Clp_Simplex *) ;
+typedef void (*setDblFunc)(Clp_Simplex *, double) ;
+
+/* Get / set primal tolerance */
+
+double ClpSimplexAPI_ClpLite::primalTolerance () const
+{
+  std::string errStr ;
+
+  static getDblFunc getPrimalTolerance = nullptr ;
+
+  if (getPrimalTolerance == nullptr) {
+    getPrimalTolerance =
+	libClp_->getFunc<getDblFunc>("Clp_primalTolerance",errStr) ;
+  }
+  return (getPrimalTolerance(clpC_)) ;
+}
+
+void ClpSimplexAPI_ClpLite::setPrimalTolerance (double val)
+{
+  std::string errStr ;
+
+  static setDblFunc setPrimalTolerance = nullptr ;
+
+  if (setPrimalTolerance == nullptr) {
+    setPrimalTolerance =
+	libClp_->getFunc<setDblFunc>("Clp_setPrimalTolerance",errStr) ;
+  }
+  return (setPrimalTolerance(clpC_,val)) ;
+}
+
+/*
   Solve a problem
 */
 int ClpSimplexAPI_ClpLite::initialSolve ()
 {
+  std::string errStr ;
+
   typedef int (*ClpInitSolFunc)(Clp_Simplex *) ;
   static ClpInitSolFunc initialSolve = nullptr ;
 
   if (initialSolve == nullptr) {
-    ClpInitSolFunc initialSolve =
-	  loadFunc<ClpInitSolFunc>(libClp_,"Clp_initialSolve") ;
+    initialSolve = libClp_->getFunc<ClpInitSolFunc>("Clp_initialSolve",errStr) ;
   }
   int retval = -1 ;
   if (initialSolve != nullptr) {

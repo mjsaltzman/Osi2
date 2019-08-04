@@ -44,7 +44,7 @@ ClpShim::ClpShim ()
   Create clp-specific objects to satisfy the OSI2 API specified as the
   \p objectType member of of \p params.
 
-  Object "WildProbMgmt" is used for testing wildcard object creation.
+  The name "WildClpSimplex" is used for testing wildcard object creation.
 */
 void *ClpShim::create (const ObjectParams *params)
 {
@@ -52,12 +52,12 @@ void *ClpShim::create (const ObjectParams *params)
   std::string what = reinterpret_cast<const char *>(params->apiStr_) ;
   void *retval = nullptr ;
 
-  std::cout << "Clp create: " << what << "API requested." << std::endl ;
+  std::cout << "Clp create: " << what << " API requested." << std::endl ;
 /*
   For an object that supports the ClpSimplex API, create a ClpLite_Wrap object
   and add a ClpSimplexAPI_ClpLite object to it.
 */
-  if (what == "ClpSimplex") {
+  if (what == "ClpSimplex" || what == "WildClpSimplex") {
     std::cout
       << "  " << what << " API is  supported." << std::endl ;
     ClpShim *shim = static_cast<ClpShim*>(params->ctrlObj_) ;
@@ -151,13 +151,6 @@ ExitFunc initPlugin (PlatformServices *services)
   if (retval < 0) {
     std::cout
 	<< "Apparent failure to register ClpSimplex API." << std::endl ;
-    return (nullptr) ;
-  }
-  retval = services->registerAPI_(
-	  reinterpret_cast<const CharString*>("ProbMgmt"),&reginfo) ;
-  if (retval < 0) {
-    std::cout
-	<< "Apparent failure to register ProbMgmt API." << std::endl ;
     return (nullptr) ;
   }
 /*

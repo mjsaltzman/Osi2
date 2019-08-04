@@ -98,7 +98,7 @@ public:
     reply dynamically. A return value of 0 means no %API support information
     is available.
   */
-  virtual int getAPIs(const char** &idents) { return (0) ; }
+  virtual int getAPIs(const char **&idents) { return (0) ; }
 
   /*! \brief Return an object that can be used as type XxxAPI.
 

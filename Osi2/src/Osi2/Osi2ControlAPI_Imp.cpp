@@ -35,7 +35,8 @@ namespace Osi2 {
 */
 ControlAPI_Imp::ControlAPI_Imp ()
     : pluginMgr_(0),
-      logLvl_(7)
+      logLvl_(7),
+      paramHandler_(ParamBEAPI_Imp<ControlAPI>(this))
 {
   knownLibMap_.clear() ;
 

@@ -1,3 +1,5 @@
+Data/Sample https://github.com/LouHafer/Data-Sample.git autotools-update
+Data/Netlib https://github.com/LouHafer/Data-Netlib.git autotools-update
 
 ThirdParty/CxxTest https://github.com/LouHafer/ThirdParty-CxxTest.git autotools-update
 ThirdParty/Glpk https://github.com/LouHafer/ThirdParty-Glpk.git autotools-update
@@ -5,6 +7,3 @@ ThirdParty/Glpk https://github.com/LouHafer/ThirdParty-Glpk.git autotools-update
 CoinUtils https://github.com/LouHafer/CoinUtils.git autotools-update
 Osi	  https://github.com/LouHafer/Osi.git autotools-update
 Clp	  https://github.com/LouHafer/Clp.git autotools-update
-
-Data/Sample https://github.com/LouHafer/Data-Sample.git autotools-update
-Data/Netlib https://github.com/LouHafer/Data-Netlib.git autotools-update

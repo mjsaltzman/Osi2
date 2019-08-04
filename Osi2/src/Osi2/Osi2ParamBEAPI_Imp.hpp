@@ -17,6 +17,7 @@
 #include <map>
 
 #include "Osi2API.hpp"
+#include "Osi2APIMgmt_Imp.hpp"
 
 #include "Osi2ParamBEAPI.hpp"
 #include "Osi2ParamBEAPIMessages.hpp"
@@ -27,8 +28,8 @@ namespace Osi2 {
 
   This class implements the ParamBEAPI methods that must be supplied by
   an %API implementation to support parameter management. It is intended
-  to be used by including a ParamBEAPI_Imp object as a member in the %API
-  object that is to be managed.
+  to be used by including a ParamBEAPI_Imp object as a member in the client
+  %API object.
 
   In particular, it can provide support for parameter management in an
   existing %API implementation with minimal modifications to the existing
@@ -44,6 +45,10 @@ namespace Osi2 {
     paramHdlr.addAPIID(SomeAPI::getAPIIDString(),this) ;
     paramHdlr.addAPIID(ParamBEAPI::getAPIIDString(),&paramHdlr) ;
   \endcode
+  This isn't integral to the handler's operation; it's a convenience service
+  provided to the client. (The client must support %API inquiry via
+  derivation from Osi2::API; this service makes that trivial. \sa
+  Osi2::APIMgmt.)
 
   Finally, load the parameters exported by SomeAPI into the handler.
   ParamBEAPI_Imp provides built-in support for parameters of simple type
@@ -72,7 +77,7 @@ namespace Osi2 {
   The %API implementor would be responsible for writing a wrapper around %API
   methods to unpack / pack the blob.
 */
-template<class Managed>
+template<class Client>
 class ParamBEAPI_Imp : public ParamBEAPI {
 
 public: 
@@ -85,12 +90,12 @@ public:
 
   /// \name Constructors and Destructor
   //@{
-  /// Default constructor; \sa #create
-  ParamBEAPI_Imp() ;
+  /// constructor; \sa #create
+  ParamBEAPI_Imp(Client *client) ;
   /// Default copy constructor; \sa #clone
   ParamBEAPI_Imp(const ParamBEAPI_Imp &original) ;
   /// Virtual constructor
-  ParamBEAPI *create() ;
+  ParamBEAPI *create(Client *client) ;
   /// Virtual copy constructor
   ParamBEAPI *clone() ;
   /// Destructor
@@ -132,9 +137,9 @@ public:
   bool set(const char *ident, const void *&blob) ;
 //@}
 
-/*! \name Utilities for use by the managed object
+/*! \name Utilities for use by the client object
 
-  Utility functions to allow the managed object to load information into this
+  Utility functions to allow the client object to load information into this
   back-end parameter management object, and retrieve it.
 */
 //@{
@@ -145,49 +150,53 @@ public:
   */
   void addParam (const char *paramID, ParamEntry *entry) ;
 
-  /*! \brief Add an API to the set of APIs implemented by the managed object
+  /*! \brief Add an API to the set of APIs implemented by the client object
 
     Add the ident string for the %API and a pointer to the object that
-    implements the %API. Where the managed object implements the %API
-    by inheritance, \p obj will typically be \p this. Where the managed
+    implements the %API. Where the client object implements the %API
+    by inheritance, \p obj will typically be \p this. Where the client
     object implements the %API by composition, \p obj will typically be
-    a member of the managed object.
+    a member of the client object.
+
+    Provided as a convenience; \sa Osi2::APIMgmt_Imp.
   */
-  void addAPIID (const char *apiID, void *obj) ;
+  inline void addAPIID (const char *apiID, void *obj)
+  { apiMgr_.addAPIID(apiID,obj) ; }
 
   /*! \brief Retrieve the list of capability APIs stored by #addAPIID.
 
     Note that ParamBEAPI_Imp does not derive from API. This is not an
     override implementation for API::getAPIs (though it provides a trivial
     implementation for that method).
+
+    Provided as a convenience; \sa Osi2::APIMgmt_Imp.
   */
   inline int getAPIs(const char **&idents)
-  { idents = apiIDs_ ; return (apiIDCnt_) ; }
+  { return (apiMgr_.getAPIs(idents)) ; }
 
   /*! \brief Retrieve the object that implements a given %API.
 
     Note that ParamBEAPI_Imp does not derive from API. This is not an
     override implementation for API::getAPIPtr (though it provides a trivial
     implementation for that method).
+
+    Provided as a convenience; \sa Osi2::APIMgmt_Imp.
   */
   inline void *getAPIPtr(const char *ident)
-  { if (objForAPI_.find(ident) == objForAPI_.end())
-    { return (nullptr) ; }
-    else
-    { return (objForAPI_.find(ident)->second) ; } }
+  { return (apiMgr_.getAPIPtr(ident)) ; }
 //@}
 
 /*! \name Exported parameter list entries
 
   The class ParamEntry and its templated derived classes ParamEntry_Imp
   record the information necessary to get and set the values of parameters in
-  the managed object.
+  the client object.
 
   Each instantiation of a templated class ParamEntry_Imp encodes the data
   type of its parameter; this makes it possible to write wrapper functions
   for get and set that properly handle the data blob. ParamEntry and its
   derived classes must be member classes of ParamBEAPI_Imp because the type
-  of the managed object must be known in order to properly invoke the
+  of the client object must be known in order to properly invoke the
   pointer-to-member-function pointers for the get and set methods.
 */
 //@{
@@ -206,25 +215,25 @@ public:
     std::string paramID_ ;
     public:
     /// Interface to the get method
-    virtual bool get (Managed *obj, void *&blob) = 0 ;
+    virtual bool get (Client *obj, void *&blob) = 0 ;
     /// Interface to the set method
-    virtual bool set (Managed *obj, const void *&blob) = 0 ;
+    virtual bool set (Client *obj, const void *&blob) = 0 ;
   } ;
 
   /*! \brief Parameter list entry
 
     An instance of this class is instantiated for a specific parameter data
-    type (ValType) and a specific managed class (Managed). Together, this
+    type (ValType) and a specific client class (Client). Together, this
     gives enough information to write get and set wrappers that will pack or
-    unpack the data blob and invoke the proper method in the managed class
+    unpack the data blob and invoke the proper method in the client class
     by way of pointers-to-member-functions.
   */
   template<class ValType>
   class ParamEntry_Imp : public ParamEntry
   { 
     public:
-    typedef ValType (Managed::*GetFunc)() const ;
-    typedef void (Managed::*SetFunc)(ValType val) ;
+    typedef ValType (Client::*GetFunc)() const ;
+    typedef void (Client::*SetFunc)(ValType val) ;
 
     /// Initialising constructor
     ParamEntry_Imp (std::string id,
@@ -248,8 +257,8 @@ public:
     /// Destructor
     ~ParamEntry_Imp () { } ;
 
-    /// Wrapper to invoke the get method from the managed class
-    bool get (Managed *obj, void *&blob)
+    /// Wrapper to invoke the get method from the client class
+    bool get (Client *obj, void *&blob)
     {
       std::cout << "    invoking derived get." << std::endl ;
       ValType *val = static_cast<ValType *>(blob) ;
@@ -257,8 +266,8 @@ public:
       return (true) ;
     }
 
-    /// Wrapper to invoke the set method from the managed class
-    bool set (Managed *obj, const void *&blob)
+    /// Wrapper to invoke the set method from the client class
+    bool set (Client *obj, const void *&blob)
     {
       std::cout << "    invoking derived set." << std::endl ;
       const ValType *val = static_cast<const ValType *>(blob) ;
@@ -268,9 +277,9 @@ public:
 
     private:
 
-    /// Pointer-to-member get function in the managed class
+    /// Pointer-to-member get function in the client class
     GetFunc getFunc_ ;
-    /// Pointer-to-member set function in the managed class
+    /// Pointer-to-member set function in the client class
     SetFunc setFunc_ ;
   } ;
 //@}
@@ -280,15 +289,10 @@ public:
 
 private:
 
-  /// Actual number of capabilities
-  int apiIDCnt_ ;
-  /// Length of capability ID vector
-  int apiIDLen_ ;
-  /// Vector of capability API IDs
-  const char **apiIDs_ ;
-
-  /// API to implementing object map
-  std::map<std::string,void*> objForAPI_ ;
+  /// The object we're serving
+  Client *client_ ;
+  /// API management object
+  APIMgmt_Imp apiMgr_ ;
 
   /// Actual number of parameters
   int paramIDCnt_ ;

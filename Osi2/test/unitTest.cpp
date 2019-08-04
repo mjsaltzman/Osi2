@@ -66,9 +66,9 @@ int testPluginManager (const std::string libName)
     return (errcnt) ;
   }
 /*
-  Invoke createObject. If it works, try to invoke a nontrivial
-  method. Which will fail, because exmip1 is not available, but that's
-  not the point. Then destroy the object.
+  Invoke createObject. If it works, try to invoke a nontrivial method. Which
+  will fail, because exmip1 is not available in the current directory,
+  but that's not the point. Then destroy the object.
 */
   DummyAdapter dummy ;
   PluginUniqueID libID = 0 ;
@@ -82,17 +82,19 @@ int testPluginManager (const std::string libName)
       ClpSimplexAPI *clp =
           static_cast<ClpSimplexAPI *>(clpWrap->getAPIPtr("ClpSimplex")) ;
       clp->readMps("exmip1.mps", true) ;
-      int retval = plugMgr.destroyObject("ProbMgmt", 0, clp) ;
+      int retval = plugMgr.destroyObject("ClpSimplex", 0, clp) ;
       if (retval < 0) {
 	  errcnt++ ;
 	  std::cout
-	    << "Apparent failure to destroy a ProbMgmt object." << std::endl ;
+	    << "Apparent failure to destroy a ClpSimplex object."
+	    << std::endl ;
       }
       clp = nullptr ;
   }
 /*
   Ask for a nonexistent API and check that we (correctly) fail to provide
-  one.
+  one. We will fail twice: once on exact match, once on an attempt at a
+  wildcard match.
 */
   libID = 0 ;
   ProbMgmtAPI *bogus =
@@ -107,27 +109,32 @@ int testPluginManager (const std::string libName)
 	<< "Eh? We shouldn't be able to create a BogusAPI object!"
 	<< std::endl ;
   }
-#if 0
   /*
-    Check that we can create an object through the wildcard mechanism.
+    Check that we can create an object through the wildcard mechanism. The Clp
+    shim doesn't register a WildClpSimplex object, so the only way we can get
+    it is by the wild card mechanism (and a special hack in Osi2ClpShim,
+    placed there for testing).
   */
   libID = 0 ;
-  clp = static_cast<ProbMgmtAPI *>(plugMgr.createObject("WildProbMgmt",
+  clpWrap = static_cast<ClpLite_Wrap *>(plugMgr.createObject("WildClpSimplex",
 				   libID, dummy)) ;
-  if (clp == nullptr) {
+  if (clpWrap == nullptr) {
       errcnt++ ;
       std::cout
-	      << "Apparent failure to create a WildProbMgmt object." << std::endl ;
+	<< "Apparent failure to create a ClpLite_Wrap object."
+	<< std::endl ;
   } else {
+      ClpSimplexAPI *clp =
+          static_cast<ClpSimplexAPI *>(clpWrap->getAPIPtr("ClpSimplex")) ;
       clp->readMps("exmip1.mps", true) ;
-      int retval = plugMgr.destroyObject("WildProbMgmt", 0, clp) ;
+      int retval = plugMgr.destroyObject("WildClpSimplex", 0, clp) ;
       if (retval < 0) {
-	  std::cout
-		  << "Apparent failure to destroy a WildProbMgmt object." << std::endl ;
+	std::cout
+	  << "Apparent failure to destroy a WildProbMgmt object."
+	  << std::endl ;
       }
       clp = nullptr ;
   }
-#endif
   /*
     Unload the plugin library.
   */
@@ -380,6 +387,38 @@ int testParamMgmtAPI ()
 	<< std::endl ;
     }
   }
+/*
+  Use the ControlAPI object to load ClpLite. Find the ClpSimplex object and
+  register it with parameter management.
+*/
+  std::string shortName = "ClpLite" ;
+  int retval = ctrlAPI1.load(shortName,"libOsi2ClpShim.so") ;
+  if (retval != 0) {
+    errCnt++ ;
+    std::cout
+      << "Apparent failure to load " << shortName << "." << std::endl ;
+    std::cout
+      << "Error code is " << retval << "." << std::endl ;
+    return (errCnt) ;
+  }
+  API *apiObj = nullptr ;
+  retval = ctrlAPI1.createObject(apiObj,"ClpSimplex") ;
+  if (retval != 0) {
+    errCnt++ ;
+    std::cout
+      << "Apparent failure to create a ClpSimplex wrapper object."
+      << std::endl ;
+    return (errCnt) ;
+  }
+  ClpLite_Wrap *wrap = dynamic_cast<ClpLite_Wrap *>(apiObj) ;
+  ClpSimplexAPI *clp =
+      static_cast<ClpSimplexAPI *>(wrap->getAPIPtr("ClpSimplex")) ;
+  clp->readMps("../../share/coin-or-sample/exmip1.mps") ;
+  mgmtAPI.enroll("ClpLite",clp) ;
+  double dblblob = 0.0 ;
+  mgmtAPI.get("ClpLite","primal tolerance",&dblblob) ;
+  std::cout
+    << "The primal zero tolerance is " << dblblob << "." << std::endl ;
 
   return (errCnt) ;
 }
@@ -412,7 +451,10 @@ int main(int argC, char* argV[])
     */
     typedef std::pair<std::string,int> TestVec ;
     std::vector<TestVec> solvers ;
+#if 0
+    Temporarily disable while ClpLite is under renovation -- lh, 190802 --
     solvers.push_back(TestVec("clp",1)) ;
+#endif
     solvers.push_back(TestVec("clpHeavy",0)) ;
 #   ifdef COIN_HAS_OSIGLPK
     solvers.push_back(TestVec("glpkHeavy",2)) ;

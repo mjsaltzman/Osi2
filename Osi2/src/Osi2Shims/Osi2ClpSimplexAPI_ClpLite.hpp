@@ -14,7 +14,8 @@
 #define COIN_EXTERN_C
 #include "Osi2ClpSimplexAPI.hpp"
 
-#include "Osi2ParamBEAPI.hpp"
+#include "Osi2APIMgmt_Imp.hpp"
+#include "Osi2ParamBEAPI_Imp.hpp"
 
 namespace Osi2 {
 
@@ -27,22 +28,52 @@ class DynamicLibrary ;
 class ClpSimplexAPI_ClpLite : public ClpSimplexAPI {
 
 public:
+/*! \name Constructors, destructor, and copy */
+//@{
   /// Constructor
   ClpSimplexAPI_ClpLite(DynamicLibrary *libClp) ;
 
   /// Destructor
   ~ClpSimplexAPI_ClpLite() ;
+//@}
 
+/*! \name Methods to read or write a problem file */
+//@{
   /// Read an mps file from the given filename
   int readMps(const char *filename, bool keepNames = false,
 	      bool ignoreErrors = false) ;
+//@}
 
+/*! \name Parameter Gets & Sets */
+//@{
+  /// Primal zero tolerance
+  double primalTolerance() const ;
+  void setPrimalTolerance(double val) ;
+
+  /// Dual zero tolerance
+  double dualTolerance() ;
+  void setDualTolerance(double val) ;
+//@}
+
+/*! \name Functions must useful to user */
+//@{
   /// General solve algorithm
   int initialSolve() ;
+//@}
+
+/*! \name API management & enquiry */
+//@{
+  inline int getAPIs(const char **&idents)
+  { return (paramMgr_.getAPIs(idents)) ; }
+
+  inline void *getAPIPtr (const char *ident)
+  { return (paramMgr_.getAPIPtr(ident)) ; }
 
 private:
   /*! \name Dynamic object management information */
   //@{
+    /// Parameter management object
+    ParamBEAPI_Imp<ClpSimplexAPI_ClpLite> paramMgr_ ;
     /// Dynamic library handle
     DynamicLibrary *libClp_ ;
     /// Clp object
