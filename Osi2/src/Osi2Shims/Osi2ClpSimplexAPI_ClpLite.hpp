@@ -51,7 +51,7 @@ public:
   void setPrimalTolerance(double val) ;
 
   /// Dual zero tolerance
-  double dualTolerance() ;
+  double dualTolerance() const ;
   void setDualTolerance(double val) ;
 //@}
 

@@ -31,12 +31,16 @@ namespace {
   Test the bare PluginManager API:
     * Initialise the PluginManager.
     * Load a plugin library.
-    * Create ProbMgmt objects: exact match and wild card. Also check that
+    * Create ClpSimplex objects: exact match and wild card. Also check that
       we fail correctly for a nonexistent object.
 
   The test is (sort of) clp-specific, but only in the sense that the test clp
-  plugin will return a ProbMgmt object via the wildcard mechanism when asked
-  for a WildProbMgmt object.
+  plugin will return a ClpSimpex object via the wildcard mechanism when asked
+  for a WildClpSimpex object.
+
+  The test also checks that innate plugins work properly, using the ParamMgmt
+  plugin as the test case. By the time the unit test executes, ParamMgmt will
+  already be loaded.
 
   Over time, this test should be expanded and broken out into a separate file.
   Arguably, it should be a separate executable.
@@ -49,13 +53,49 @@ int testPluginManager (const std::string libName)
 
   PluginManager &plugMgr = PluginManager::getInstance() ;
 /*
+  Try to load ParamMgmt. This should provoke an error as it's an innate plugin
+  and should have registered itself during program startup.
+*/
+  std::string innateName = "ParamMgmt" ;
+  int retval = plugMgr.loadOneLib(innateName) ;
+  if (retval == 0) {
+    std::cout
+      << "Unexpected success loading" << innateName << "." << std::endl ;
+    std::cout
+      << "Should report " << innateName << " already loaded." << std::endl ;
+    std::cout
+      << "Error code is " << retval << "." << std::endl ;
+  }
+/*
+  Now unload ParamMgmt and reload it, to test that this works for an innate
+  plugin.
+*/
+  retval = plugMgr.unloadOneLib(innateName) ;
+  if (retval != 0) {
+    errcnt++ ;
+    std::cout
+      << "Apparent failure to unload " << innateName << "." << std::endl ;
+    std::cout
+      << "Error code is " << retval << "." << std::endl ;
+    return (errcnt) ;
+  }
+  retval = plugMgr.loadOneLib(innateName) ;
+  if (retval != 0) {
+    errcnt++ ;
+    std::cout
+      << "Apparent failure to load " << innateName << "." << std::endl ;
+    std::cout
+      << "Error code is " << retval << "." << std::endl ;
+    return (errcnt) ;
+  }
+/*
   Now let's try to load the shim.
 */
   std::string dfltDir = plugMgr.getDfltPluginDir() ;
   char dirSep = CoinFindDirSeparator() ;
   std::string shimPath = dfltDir + dirSep + libName ;
 
-  int retval = plugMgr.loadOneLib(libName) ;
+  retval = plugMgr.loadOneLib(libName) ;
 
   if (retval != 0) {
     errcnt++ ;

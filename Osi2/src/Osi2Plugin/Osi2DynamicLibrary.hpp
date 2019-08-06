@@ -172,17 +172,16 @@ private:
 namespace Osi2 {
 
 template<class T>
-T DynamicLibrary::getSymbol (const std::string &symbol,
+T DynamicLibrary::getSymbol (const std::string &name,
 			     std::string &errorString)
 {
   if (handle_ == nullptr) return (nullptr) ;
 
-  void *sym = ::dlsym(handle_,symbol.c_str()) ;
+  void *sym = ::dlsym(handle_,name.c_str()) ;
   if (sym == nullptr) {
-      errorString += "Failed to load symbol \"" + symbol + '"' ;
-      const char *zErrorString = ::dlerror() ;
-      if (zErrorString)
-	  errorString = errorString + ": " + zErrorString ;
+    errorString += "Failed to load symbol \"" + name + '"' ;
+    const char *zErrorString = ::dlerror() ;
+    if (zErrorString) errorString = errorString + ": " + zErrorString ;
   }
   return (static_cast<T>(sym)) ;
 }
@@ -207,18 +206,9 @@ template <class FuncSig>
 FuncSig DynamicLibrary::getFunc (const std::string &name,
 				 std::string &errStr)
 {
-  std::cout << "invoking getSymbol for " << name << std::endl ;
   size_t grossHack = 
       reinterpret_cast<size_t>(getSymbol(name,errStr)) ;
-  std::cout
-    << "back from getSymbol, result "
-    << std::hex << grossHack << std::dec
-    << std::endl ;
   FuncSig func = reinterpret_cast<FuncSig>(grossHack) ;
-  if (func == nullptr) {
-    std::cout << "Apparent failure to find " << name << "." << std::endl ;
-    std::cout << errStr << std::endl ;
-  }
   return (func) ;
 }
 

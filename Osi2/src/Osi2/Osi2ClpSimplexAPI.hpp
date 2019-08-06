@@ -208,12 +208,12 @@ public:
   /*! \name Parameter Gets & Sets */
   //@{
   /// Primal zero tolerance
-  double primalTolerance() const ;
-  void setPrimalTolerance(double value) ;
+  virtual double primalTolerance() const = 0 ;
+  virtual void setPrimalTolerance(double value) = 0 ;
 
   /// Dual zero tolerance
-  double dualTolerance() const ;
-  void setDualTolerance(double value) ;
+  virtual double dualTolerance() const = 0 ;
+  virtual void setDualTolerance(double value) = 0 ;
 
   /// Dual objective limit
   double dualObjectiveLimit() ;

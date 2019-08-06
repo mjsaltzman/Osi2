@@ -73,7 +73,7 @@ ParamBEAPIMessages::ParamBEAPIMessages (Language language)
     : CoinMessages(sizeof(us_english) / sizeof(OneParamBEAPIMessage))
 {
     language_ = language ;
-    std::strcpy(source_, "OSI2") ;
+    std::strcpy(source_, "PMgmtBE") ;
     class_ = 2 ;
 
     OneParamBEAPIMessage *msg = &us_english[0] ;

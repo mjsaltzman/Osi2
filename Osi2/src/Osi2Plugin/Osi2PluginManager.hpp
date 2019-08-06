@@ -73,8 +73,9 @@ struct IObjectAdapter ;
   for the file defining the class to instantiate a single file-local static
   object using a constructor whose main purpose is to invoke #addPreloadLib
   with the library's name and \link Osi2::InitFunc initialisation function
-  \endlink as a parameter. The collected InitFunc's are executed when the
-  single instance of the PluginManager is constructed.
+  \endlink as parameters. Note that this special-purpose constructor must
+  invoke #getInstance to insure that an instance of the PluginManager has been
+  created.
 */
 
 class PluginManager {
@@ -425,6 +426,16 @@ private:
 
     /// Default plugin directory
     std::string dfltPluginDir_ ;
+
+    /// Default innate plugin directory
+    std::string dfltInnateDir_ ;
+    /*! \brief Innate plugin initFunc map
+    
+      We need to remember these in case the user decides to `unload' an innate
+      plugin, then wants to reload it.
+    */
+    typedef std::map<std::string,InitFunc> PreloadMap ;
+    PreloadMap preloadLibs_ ;
 
     /// Indicator; false if the message handler belongs to the client
     bool dfltHandler_ ;

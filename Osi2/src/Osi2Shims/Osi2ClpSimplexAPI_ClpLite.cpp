@@ -28,6 +28,14 @@
 
 #include "Osi2DynamicLibrary.hpp"
 
+/*
+  Various commonly used function typedefs, to avoid repeating them over and
+  over.
+*/
+
+typedef double (*rDp0)(Clp_Simplex *) ;
+typedef void (*rpVpD)(Clp_Simplex *, double) ;
+
 
 namespace Osi2 {
 
@@ -65,6 +73,10 @@ ClpSimplexAPI_ClpLite::ClpSimplexAPI_ClpLite (DynamicLibrary *libClp)
   		       &ClpSimplexAPI_ClpLite::primalTolerance,
   		       &ClpSimplexAPI_ClpLite::setPrimalTolerance) ;
   paramMgr_.addParam("primal tolerance",paramEntry) ;
+  paramEntry = new DPE("dual tolerance",
+  		       &ClpSimplexAPI_ClpLite::dualTolerance,
+  		       &ClpSimplexAPI_ClpLite::setDualTolerance) ;
+  paramMgr_.addParam("dual tolerance",paramEntry) ;
   return ;
 }
 
@@ -114,23 +126,17 @@ int ClpSimplexAPI_ClpLite::readMps (const char *filename, bool keepNames,
   return (retval) ;
 }
 
-/*
-  typedefs for typical get/set methods
-*/
-typedef double (*getDblFunc)(Clp_Simplex *) ;
-typedef void (*setDblFunc)(Clp_Simplex *, double) ;
-
 /* Get / set primal tolerance */
 
 double ClpSimplexAPI_ClpLite::primalTolerance () const
 {
   std::string errStr ;
 
-  static getDblFunc getPrimalTolerance = nullptr ;
+  static rDp0 getPrimalTolerance = nullptr ;
 
   if (getPrimalTolerance == nullptr) {
     getPrimalTolerance =
-	libClp_->getFunc<getDblFunc>("Clp_primalTolerance",errStr) ;
+	libClp_->getFunc<rDp0>("Clp_primalTolerance",errStr) ;
   }
   return (getPrimalTolerance(clpC_)) ;
 }
@@ -139,13 +145,41 @@ void ClpSimplexAPI_ClpLite::setPrimalTolerance (double val)
 {
   std::string errStr ;
 
-  static setDblFunc setPrimalTolerance = nullptr ;
+  static rpVpD setPrimalTolerance = nullptr ;
 
   if (setPrimalTolerance == nullptr) {
     setPrimalTolerance =
-	libClp_->getFunc<setDblFunc>("Clp_setPrimalTolerance",errStr) ;
+	libClp_->getFunc<rpVpD>("Clp_setPrimalTolerance",errStr) ;
   }
   return (setPrimalTolerance(clpC_,val)) ;
+}
+
+/* Get / set dual tolerance */
+
+double ClpSimplexAPI_ClpLite::dualTolerance () const
+{
+  std::string errStr ;
+
+  static rDp0 getDualTolerance = nullptr ;
+
+  if (getDualTolerance == nullptr) {
+    getDualTolerance =
+	libClp_->getFunc<rDp0>("Clp_dualTolerance",errStr) ;
+  }
+  return (getDualTolerance(clpC_)) ;
+}
+
+void ClpSimplexAPI_ClpLite::setDualTolerance (double val)
+{
+  std::string errStr ;
+
+  static rpVpD setDualTolerance = nullptr ;
+
+  if (setDualTolerance == nullptr) {
+    setDualTolerance =
+	libClp_->getFunc<rpVpD>("Clp_setDualTolerance",errStr) ;
+  }
+  return (setDualTolerance(clpC_,val)) ;
 }
 
 /*

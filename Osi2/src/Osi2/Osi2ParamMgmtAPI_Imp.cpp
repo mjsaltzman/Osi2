@@ -19,7 +19,9 @@ namespace {
 
 /*
   The `registration' instance. The sole purpose of this instance of
-  ParamMgmtAPI is to register the initFunc with the PluginManager.
+  ParamMgmtAPI is to register the initFunc with the PluginManager. Since we
+  won't have to look these up with dlsym, then can be plain static (hence
+  mangled) names. No need for "C" linkage.
 */
 
 Osi2::ParamMgmtAPI_Imp regInstance("ParamMgmt") ;
@@ -27,19 +29,17 @@ Osi2::ParamMgmtAPI_Imp regInstance("ParamMgmt") ;
 /*
   Plugin cleanup function.
 */
-extern "C"
-int32_t cleanupPlugin (const Osi2::PlatformServices *services)
+static int32_t cleanupPlugin (const Osi2::PlatformServices *services)
 {
   std::cout << "Executing Osi2ParamMgmt_Imp::cleanupPlugin." << std::endl ;
   return (0) ;
 }
 
 /*
-  Plugin initialisation function. 
+  Plugin initialisation function.
 */
 
-extern "C"
-Osi2::ExitFunc initPlugin (Osi2::PlatformServices *services)
+static Osi2::ExitFunc initPlugin (Osi2::PlatformServices *services)
 {
   std::cout << "Executing Osi2ParamMgmt_Imp::initPlugin" << std::endl ;
 
@@ -276,7 +276,7 @@ ParamMgmtAPI_Imp::ParamMgmtAPI_Imp (std::string name)
 */
   msgHandler_ = new CoinMessageHandler() ;
   msgs_ = ParamMgmtAPIMessages() ;
-  msgHandler_->setLogLevel(logLvl_) ;
+  msgHandler_->setLogLevel(7) ;
   msgHandler_->message(PMMGAPI_INIT, msgs_)
       << "registration" << CoinMessageEol ;
 #endif

@@ -34,18 +34,6 @@
 
 using namespace Osi2 ;
 
-namespace {
-
-/*
-  Vector to hold InitFuncs registered by innate (compiled-in) libraries at
-  program startup. The string is the name of the library.
-*/
-typedef std::pair<std::string,InitFunc> PreloadEntry ;
-typedef std::vector<PreloadEntry> PreloadVector ;
-static PreloadVector preloadLibs ;
-
-}
-
 /*
   Given an initialisation function, do the necessary bookkeeping to register
   the library and its APIs with the plugin manager.
@@ -87,6 +75,7 @@ PluginUniqueID PluginManager::initOneLib (std::string fullPath,
     return (0) ;
   }
   msgHandler_->message(PLUGMGR_LIBINITOK, msgs_)
+      << ((dynLib == nullptr)?"innate":"plugin")
       << fullPath << CoinMessageEol ;
 /*
   We have happiness: the library is initialised. Do the bookkeeping.
@@ -106,7 +95,7 @@ PluginUniqueID PluginManager::initOneLib (std::string fullPath,
   libPathToIDMap_[fullPath] = libInInit_ ;
   LibraryInfo &info = libraryMap_[libInInit_] ;
   info.id_ = libInInit_ ;
-  info.isDynamic_ = (dynLib == nullptr)?false:true ;
+  info.isDynamic_ = ((dynLib == nullptr)?false:true) ;
   info.dynLib_ = dynLib ;
   info.ctrlObj_ = platformServices_.ctrlObj_ ;
   info.exitFunc_ = exitFunc ;
@@ -118,7 +107,9 @@ PluginUniqueID PluginManager::initOneLib (std::string fullPath,
   initialisingPlugin_ = false ;
   libInInit_ = 0 ;
 
-  msgHandler_->message(PLUGMGR_LIBLDOK, msgs_) << fullPath << CoinMessageEol ;
+  msgHandler_->message(PLUGMGR_LIBLDOK, msgs_)
+      << ((info.isDynamic_ == true)?"plugin":"innate")
+      << fullPath << CoinMessageEol ;
 
   return (info.id_) ;
 }
@@ -134,6 +125,7 @@ PluginUniqueID PluginManager::initOneLib (std::string fullPath,
 PluginManager::PluginManager()
   : currentID_(0),
     initialisingPlugin_(false),
+    dfltInnateDir_("innate"),
     dfltHandler_(true),
     logLvl_(7)
 {
@@ -389,62 +381,89 @@ PluginManager &PluginManager::getInstance()
      0: library loaded and initialised without error
      1: library is already loaded
 
+  The ability to `load' an innate plugin is limited. It's expected that innate
+  plugins will preregister --- otherwise there's no way to know the address of
+  the initFunc. The only time this method would get involved is if the user
+  actually `unloaded' the innate plugin and now wants it back.
+
   \todo Implement platform-independent path handling.
   \todo Implement resolution of symbolic links.
   \todo Implement conversion to absolute path.
 */
-int PluginManager::loadOneLib (const std::string &lib, const std::string *dir,
+int PluginManager::loadOneLib (const std::string &libName,
+			       const std::string *dir,
                                PluginUniqueID *uniqueID)
 {
   if (uniqueID != 0) (*uniqueID) = 0 ;
 /*
-  Construct the full path for the library.
-
-  \todo
-  Should this be converted to a standardised absolute path? That'd avoid
-  issues with different ways of specifying the same library.
+  If no directory is specified, consider both the default plugin directory and
+  the innate `directory'. If a directory is specified, use that exclusively.
 */
+  std::string pluginPath ;
+  std::string innatePath ;
   std::string fullPath ;
-  if (dir == nullptr || (dir->compare("") == 0)) {
-    fullPath += getDfltPluginDir() ;
-  } else {
-    fullPath += *dir ;
-  }
+  std::string libDir ;
   char dirSep = CoinFindDirSeparator() ;
-  fullPath += dirSep + lib ;
+
+  if (dir == nullptr || (dir->compare("") == 0)) {
+    libDir = getDfltPluginDir() ;
+    pluginPath = libDir + dirSep + libName ;
+    innatePath = dfltInnateDir_ + dirSep + libName ;
+  } else {
+    libDir = *dir ;
+    pluginPath = libDir + dirSep + libName ;
+    innatePath = "" ; }
 /*
   Is this library already loaded? If so, don't do it again.
 */
-  if (libPathToIDMap_.find(fullPath) != libPathToIDMap_.end()) {
+  bool foundIt = false ;
+  if (libPathToIDMap_.find(pluginPath) != libPathToIDMap_.end()) {
+    foundIt = true ;
+    fullPath = pluginPath ;
+  }
+  if (!foundIt && innatePath != "") {
+    if (libPathToIDMap_.find(innatePath) != libPathToIDMap_.end()) {
+      foundIt = true ;
+      fullPath = innatePath ;
+    }
+  }
+  if (foundIt) {
     msgHandler_->message(PLUGMGR_LIBLDDUP, msgs_)
 	<< fullPath << CoinMessageEol ;
-    return (1) ;
-  }
+    return (1) ; }
 /*
-  Attempt to load the library. A null return indicates failure. Report the
-  problem and return an error.
+  Is this an innate library? If so, innatePath should show up in the map of
+  preregistered initFuncs. (And if not, there's nothing we can do if it really
+  is an innate library.)
 */
+  DynamicLibrary *dynLib = nullptr ;
+  InitFunc initFunc = nullptr ;
   std::string errStr ;
-  DynamicLibrary *dynLib = DynamicLibrary::load(fullPath, errStr) ;
-  if (dynLib == nullptr) {
-    msgHandler_->message(PLUGMGR_LIBLDFAIL, msgs_)
-	<< fullPath << errStr << CoinMessageEol ;
-    return (-1) ;
+
+  PreloadMap::const_iterator plmIter = preloadLibs_.find(innatePath) ;
+  if (plmIter != preloadLibs_.end()) {
+    initFunc = plmIter->second ;
+    fullPath = innatePath ; }  
+/*
+  If we didn't turn up an entry in preloadLibs_, this must be an honest
+  plugin. Attempt to load the library, then the initFunc.
+*/
+  if (initFunc == nullptr) {
+    dynLib = DynamicLibrary::load(pluginPath, errStr) ;
+    if (dynLib == nullptr) {
+      msgHandler_->message(PLUGMGR_LIBLDFAIL, msgs_)
+	  << pluginPath << errStr << CoinMessageEol ;
+      return (-1) ;
+    }
+    fullPath = pluginPath ;
+    initFunc = dynLib->getFunc<InitFunc>("initPlugin",errStr) ;
   }
 /*
-  Find the initialisation function "initPlugin". If this entry point
-  is missing from the library, we're in trouble.
-
-  Suppress the "can't convert pointer-to-object to pointer-to-function"
-  warning. Use the guarantee that any pointer can be converted to size_t
-  and back to launder the function pointer
+  No initFunc. We can't proceed.
 */
-  size_t grossHack =
-      reinterpret_cast<size_t>(dynLib->getSymbol("initPlugin", errStr)) ;
-  InitFunc initFunc = reinterpret_cast<InitFunc>(grossHack) ;
   if (initFunc == nullptr) {
     msgHandler_->message(PLUGMGR_SYMLDFAIL, msgs_)
-	<< "function" << "initPlugin" << fullPath << errStr
+	<< "function" << "initPlugin" << libName << errStr
 	<< CoinMessageEol ;
     return (-2) ;
   }
@@ -536,126 +555,136 @@ int32_t PluginManager::loadAll(const std::string &libDir,
 int PluginManager::unloadOneLib (const std::string &libName,
                                  const std::string *dir)
 {
-    int result = 0 ;
+  int result = 0 ;
+/*
+  If no directory is specified, consider both the default plugin directory and
+  the innate `directory'. If a directory is specified, use that exclusively.
+*/
+  std::string libDir ;
+  std::string pluginPath ;
+  std::string innatePath ;
+  std::string fullPath ;
+  char dirSep = CoinFindDirSeparator() ;
 
-    /*
-      If no directory is specified, use the default plugin directory.
-    */
-    std::string fullPath ;
-    if (dir == nullptr || (dir->compare("") == 0)) {
-        fullPath += getDfltPluginDir() ;
+  if (dir == nullptr || (dir->compare("") == 0)) {
+    libDir = getDfltPluginDir() ;
+    pluginPath = libDir + dirSep + libName ;
+    innatePath = dfltInnateDir_ + dirSep + libName ;
+  } else {
+    libDir = *dir ;
+    pluginPath = libDir + dirSep + libName ;
+    innatePath = "" ;
+  }
+/*
+  Look up the library's unique ID. It's possible (though unlikely) that we've
+  been asked to unload an innate library. If we don't find anything at all,
+  complain and return.
+*/
+  bool foundIt = false ;
+  LibPathToIDMap::iterator lpiIter = libPathToIDMap_.find(pluginPath) ;
+  if (lpiIter != libPathToIDMap_.end()) {
+    foundIt = true ;
+    fullPath = pluginPath ;
+  }
+  if (!foundIt && innatePath != "") {
+    lpiIter = libPathToIDMap_.find(innatePath) ;
+    if (lpiIter != libPathToIDMap_.end()) {
+      foundIt = true ;
+      fullPath = innatePath ;
+    }
+  }
+  if (!foundIt) {
+    msgHandler_->message(PLUGMGR_LIBNOTFOUND, msgs_)
+	<< libName << pluginPath << innatePath << CoinMessageEol ;
+    return (1) ; }
+  PluginUniqueID id = lpiIter->second ;
+  LibraryInfo &lib = libraryMap_[id] ;
+/*
+  Step through the exact match map and remove any entries that are registered
+  to this library. Regrettably, erase for a map is defined to invalidate
+  the iterator pointing to the element. But not iterators pointing to other
+  elements, so we need to advance prior to erasing.
+*/
+  APIRegMap::iterator rmIter = exactMatchMap_.begin() ;
+  while (rmIter != exactMatchMap_.end()) {
+    if (rmIter->second.id_ == id) {
+      APIRegMap::iterator tmpIter = rmIter ;
+      rmIter++ ;
+      msgHandler_->message(PLUGMGR_APIUNREG, msgs_)
+	  << tmpIter->first << fullPath << CoinMessageEol ;
+      exactMatchMap_.erase(tmpIter) ;
     } else {
-        fullPath += *dir ;
+      rmIter++ ;
     }
-    char dirSep = CoinFindDirSeparator() ;
-    fullPath += dirSep + libName ;
-    /*
-      Look up the library's unique ID. Warn the user if the library is
-      not loaded.
-    */
-    LibPathToIDMap::iterator lpiIter = libPathToIDMap_.find(fullPath) ;
-    if (lpiIter == libPathToIDMap_.end()) {
-        msgHandler_->message(PLUGMGR_LIBNOTFOUND, msgs_)
-                << fullPath << CoinMessageEol ;
-        return (1) ;
+  }
+/*
+  See if there's an entry in the wildcard vector. Vectors don't have the
+  same problem as maps (erase returns a valid iterator), but there's only
+  one entry so it's irrelevant.
+*/
+  for (APIRegVec::iterator rvIter = wildCardVec_.begin() ;
+       rvIter != wildCardVec_.end() ;
+       rvIter++) {
+    if (rvIter->id_ == id) {
+      msgHandler_->message(PLUGMGR_APIUNREG, msgs_)
+	<< "wildcard"
+	<< fullPath << CoinMessageEol ;
+      wildCardVec_.erase(rvIter) ;
+      break ;
     }
-    PluginUniqueID id = lpiIter->second ;
-    LibraryInfo &lib = libraryMap_[id] ;
-    /*
-      Step through the exact match map and remove any entries that are
-      registered to this library. Regrettably, erase for a map is defined
-      to invalidate the iterator pointing to the element. But not iterators
-      pointing to other elements, so we need to advance prior to erasing.
-    */
-    APIRegMap::iterator rmIter = exactMatchMap_.begin() ;
-    while (rmIter != exactMatchMap_.end()) {
-        if (rmIter->second.id_ == id) {
-            APIRegMap::iterator tmpIter = rmIter ;
-            rmIter++ ;
-            msgHandler_->message(PLUGMGR_APIUNREG, msgs_)
-		  << tmpIter->first
-		  << lib.dynLib_->getLibPath() << CoinMessageEol ;
-            exactMatchMap_.erase(tmpIter) ;
-        } else {
-            rmIter++ ;
-        }
-    }
-    /*
-      See if there's an entry in the wildcard vector. Vectors don't have the
-      same problem as maps (erase returns a valid iterator), but there's only
-      one entry so it's irrelevant.
-    */
-    for (APIRegVec::iterator rvIter = wildCardVec_.begin() ;
-            rvIter != wildCardVec_.end() ;
-            rvIter++) {
-        if (rvIter->id_ == id) {
-            msgHandler_->message(PLUGMGR_APIUNREG, msgs_)
-		  << "wildcard"
-		  << lib.dynLib_->getLibPath() << CoinMessageEol ;
-            wildCardVec_.erase(rvIter) ;
-            break ;
-        }
-    }
-    /*
-      Execute the exit function for the library.
-    */
-    bool threwError = false ;
-    ExitFunc func = lib.exitFunc_ ;
-    platformServices_.pluginID_ = id ;
-    platformServices_.ctrlObj_ = lib.ctrlObj_ ;
-    try {
-        result = (*func)(&platformServices_) ;
-    } catch (...) {
-        threwError = true ;
-    }
-    if (threwError || result != 0) {
-        msgHandler_->message(PLUGMGR_LIBEXITFAIL, msgs_)
-                << lib.dynLib_->getLibPath() << CoinMessageEol ;
-        result = -1 ;
-    } else {
-        msgHandler_->message(PLUGMGR_LIBEXITOK, msgs_)
-                << lib.dynLib_->getLibPath() << CoinMessageEol ;
-    }
-    /*
-      If this is an actual dynamic library, unload the library. The remove
-      the map entry.
-    */
-    if (lib.isDynamic_) {
-      msgHandler_->message(PLUGMGR_LIBCLOSE, msgs_)
-	  << lib.dynLib_->getLibPath() << CoinMessageEol ;
-      delete lib.dynLib_ ;
-    }
-    LibraryMap::iterator lmIter = libraryMap_.find(id) ;
-    libraryMap_.erase(lmIter) ;
-    libPathToIDMap_.erase(lpiIter) ;
+  }
+  /*
+    Execute the exit function for the library.
+  */
+  bool threwError = false ;
+  ExitFunc func = lib.exitFunc_ ;
+  platformServices_.pluginID_ = id ;
+  platformServices_.ctrlObj_ = lib.ctrlObj_ ;
+  try {
+    result = (*func)(&platformServices_) ;
+  } catch (...) {
+    threwError = true ;
+  }
+  if (threwError || result != 0) {
+    msgHandler_->message(PLUGMGR_LIBEXITFAIL, msgs_)
+      << fullPath << CoinMessageEol ;
+    result = -1 ;
+  } else {
+    msgHandler_->message(PLUGMGR_LIBEXITOK, msgs_)
+      << fullPath << CoinMessageEol ;
+  }
+/*
+  If this is an actual dynamic library, unload the library. Then remove
+  the map entry.
+*/
+  if (lib.isDynamic_) {
+    msgHandler_->message(PLUGMGR_LIBCLOSE, msgs_)
+      << fullPath << CoinMessageEol ;
+    delete lib.dynLib_ ;
+  }
+  LibraryMap::iterator lmIter = libraryMap_.find(id) ;
+  libraryMap_.erase(lmIter) ;
+  libPathToIDMap_.erase(lpiIter) ;
 
-    return (result) ;
+  return (result) ;
 }
 
 /*
-  Add an InitFunc entry to preloadLibs.
-
   This is a hook for compiled-in libraries to register their APIs with the
-  PluginManager. The trick is to get a one-time registration. The idea here
+  PluginManager. The trick is to get a one-time registration. The strategy 
   is that a compiled-in API can create a single static instance of itself,
   with minimal initialisation, whose sole purpose in life is to invoke
-  addPreloadLib and leave a pointer to the plugin's InitFunc. When getInstance
-  finally executes, the PluginManager constructor will invoke each InitFunc,
-  registering the plugins so they can be used just like any other plugin.
+  addPreloadLib and provide a pointer to the plugin's InitFunc. The
+  PluginManager remembers the initFunc so that it can provide the illusion of
+  unloading an innate plugin and reloading it.
 */
 
 void PluginManager::addPreloadLib (std::string lib, InitFunc initFunc)
 {
-  std::cout << "  processing preload entry for " << lib << std::endl ;
-
   char dirSep = CoinFindDirSeparator() ;
-  std::string tmp("innate") ;
-  std::string fullPath = tmp + dirSep + lib ;
-  std::cout << "  calling initOneLib with " << fullPath << "." << std::endl ;
+  std::string fullPath = dfltInnateDir_ + dirSep + lib ;
+  preloadLibs_[fullPath] = initFunc ;
   PluginUniqueID id = initOneLib(fullPath,initFunc) ;
-
-  std::cout << "  preloaded " << lib << " as " << id << std::endl ;
-
 }
 
 /*
@@ -673,31 +702,32 @@ int PluginManager::shutdown()
   for (LibraryMap::iterator lmIter = libraryMap_.begin() ;
        lmIter != libraryMap_.end() ;
        lmIter++) {
-    int result = 0 ;
-    bool threwError = false ;
+
     LibraryInfo &libInfo = lmIter->second ;
     ExitFunc func = libInfo.exitFunc_ ;
-    std::string libName ;
+    platformServices_.pluginID_ = libInfo.id_ ;
+    platformServices_.ctrlObj_ = libInfo.ctrlObj_ ;
+
+    int result = 0 ;
+    bool threwError = false ;
 /*
-  If the library is dynamic, we'll have the full path in dynLib. If it's
-  innate, we need to scan libPathToIDMap for the entry. Inefficient, but this
-  is the only place we do it.
+  Figure out the full path for the library. For honest plugins we can get this
+  from the dynamic library entry of libInfo. For innate plugins, we have to
+  search through the libPathToIDMap_
 */
+    std::string fullPath ;
     if (libInfo.isDynamic_) {
-      DynamicLibrary *dynLib = libInfo.dynLib_ ;
-      libName = dynLib->getLibPath() ;
+      fullPath = libInfo.dynLib_->getLibPath() ;
     } else {
-      libName = "error!" ;
-      for (LibPathToIDMap::const_iterator lpIter = libPathToIDMap_.begin() ;
-           lpIter != libPathToIDMap_.end() ;
-	   lpIter++) {
-	if (lpIter->second == libInfo.id_) {
-	  libName = lpIter->first ;
+      for (LibPathToIDMap::const_iterator lptiIter = libPathToIDMap_.begin() ;
+           lptiIter != libPathToIDMap_.end() ;
+	   lptiIter++) {
+	if (lptiIter->second == libInfo.id_) {
+	  fullPath = lptiIter->first ;
+	  break ;
 	}
       }
     }
-    platformServices_.pluginID_ = libInfo.id_ ;
-    platformServices_.ctrlObj_ = libInfo.ctrlObj_ ;
     try {
       result = (*func)(&platformServices_) ;
     } catch (...) {
@@ -705,11 +735,11 @@ int PluginManager::shutdown()
     }
     if (threwError || result != 0) {
       msgHandler_->message(PLUGMGR_LIBEXITFAIL, msgs_)
-	  <<  libName << CoinMessageEol ;
+	  <<  fullPath << CoinMessageEol ;
       overallResult-- ;
     } else {
       msgHandler_->message(PLUGMGR_LIBEXITOK, msgs_)
-	  << libName << CoinMessageEol ;
+	  << fullPath << CoinMessageEol ;
     }
   }
 /*

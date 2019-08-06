@@ -21,7 +21,6 @@
 
 #include "Osi2Config.h"
 #include "Osi2nullptr.hpp"
-// #include "Osi2DynamicLibrary.hpp"
 
 #include "Osi2ClpLite_Wrap.hpp"
 
@@ -89,6 +88,16 @@ int32_t ClpShim::destroy (void *victim, const ObjectParams *objParms)
     return (0) ;
 }
 
+
+/*
+  Plugin cleanup method. Does whatever is needed to clean up after the plugin
+  prior to unloading the library.
+*/
+extern "C" int32_t cleanupPlugin (const PlatformServices *services)
+{
+  std::cout << "Executing ClpShim cleanupPlugin." << std::endl ;
+    return (0) ;
+}
 
 /*
   Plugin initialisation method. The job here is to construct a parameter
@@ -164,15 +173,11 @@ ExitFunc initPlugin (PlatformServices *services)
 	<< "Apparent failure to register wildcard plugin." << std::endl ;
     return (nullptr) ;
   }
+/*
+  std::cout
+    << "   in ClpShim initPlugin, cleanupPlugin is "
+    << std::hex << (void *) cleanupPlugin << std::dec
+    << std::endl ;
+*/
   return (cleanupPlugin) ;
 }
-
-/*
-  Plugin cleanup method. Does whatever is needed to clean up after the plugin
-  prior to unloading the library.
-*/
-extern "C" int32_t cleanupPlugin (const PlatformServices *services)
-{
-    return (0) ;
-}
-

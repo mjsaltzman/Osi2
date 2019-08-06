@@ -84,7 +84,7 @@ ParamMgmtAPIMessages::ParamMgmtAPIMessages (Language language)
     : CoinMessages(sizeof(us_english) / sizeof(OneParamMgmtAPIMessage))
 {
     language_ = language ;
-    std::strcpy(source_, "OSI2") ;
+    std::strcpy(source_, "PMgmt") ;
     class_ = 2 ;
 
     OneParamMgmtAPIMessage *msg = &us_english[0] ;
